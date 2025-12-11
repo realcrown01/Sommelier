@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Mock Winery · AI Sommelier Demo</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        background: #020617;
+        color: #e5e7eb;
+      }
+
+      .page {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 24px 16px 40px;
+      }
+
+      .nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 24px;
+      }
+
+      .logo {
+        font-size: 22px;
+        font-weight: 600;
+      }
+
+      .tagline {
+        font-size: 13px;
+        color: #9ca3af;
+      }
+
+      .badge {
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.7);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 1.2fr 1.4fr;
+        gap: 20px;
+      }
+
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .wine-list,
+      .widget {
+        border-radius: 18px;
+        background: radial-gradient(
+            circle at top left,
+            rgba(148, 163, 184, 0.15),
+            transparent 55%
+          ),
+          #020617;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        padding: 16px 18px;
+      }
+
+      .section-title {
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #9ca3af;
+        margin-bottom: 8px;
+      }
+
+      .wine-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-height: 420px;
+        overflow-y: auto;
+      }
+
+      .wine-card {
+        border-radius: 14px;
+        padding: 10px 12px;
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: border-color 0.15s ease, background 0.15s ease,
+          transform 0.08s ease;
+      }
+
+      .wine-card:hover {
+        border-color: rgba(96, 165, 250, 0.7);
+        transform: translateY(-1px);
+      }
+
+      .wine-card.active {
+        border-color: rgba(249, 115, 22, 0.85);
+        background: radial-gradient(
+            circle at top right,
+            rgba(249, 115, 22, 0.18),
+            transparent 55%
+          ),
+          rgba(15, 23, 42, 0.95);
+      }
+
+      .wine-name-line {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+
+      .wine-name {
+        font-size: 15px;
+        font-weight: 600;
+      }
+
+      .wine-price {
+        font-size: 13px;
+        color: #f97316;
+      }
+
+      .wine-meta {
+        font-size: 12px;
+        color: #9ca3af;
+        margin-top: 4px;
+      }
+
+      .wine-notes {
+        font-size: 13px;
+        margin-top: 6px;
+        color: #e5e7eb;
+      }
+
+      .widget {
+        display: flex;
+        flex-direction: column;
+        height: 460px;
+      }
+
+      .widget-header {
+        margin-bottom: 8px;
+      }
+
+      .widget-wine-title {
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .widget-wine-sub {
+        font-size: 12px;
+        color: #9ca3af;
+        margin-top: 2px;
+      }
+
+      .messages {
+        flex: 1;
+        overflow-y: auto;
+        padding-right: 6px;
+        margin: 8px 0 10px;
+      }
+
+      .bubble {
+        max-width: 90%;
+        margin-bottom: 10px;
+        padding: 9px 11px;
+        border-radius: 12px;
+        font-size: 14px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+      }
+
+      .bubble.user {
+        background: rgba(59, 130, 246, 0.18);
+        align-self: flex-end;
+        border-bottom-right-radius: 4px;
+      }
+
+      .bubble.ai {
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(148, 163, 184, 0.5);
+        align-self: flex-start;
+        border-bottom-left-radius: 4px;
+      }
+
+      .widget-body {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+      }
+
+      .input-row {
+        display: flex;
+        gap: 8px;
+      }
+
+      textarea {
+        flex: 1;
+        resize: none;
+        min-height: 52px;
+        max-height: 92px;
+        padding: 9px 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.7);
+        background: rgba(15, 23, 42, 0.9);
+        color: #e5e7eb;
+        font-family: inherit;
+        font-size: 14px;
+        outline: none;
+      }
+
+      textarea:focus {
+        border-color: rgba(96, 165, 250, 0.9);
+      }
+
+      button {
+        border: none;
+        border-radius: 12px;
+        padding: 0 16px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        background: linear-gradient(135deg, #f97316, #ec4899);
+        color: white;
+        white-space: nowrap;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+
+      .status {
+        font-size: 12px;
+        color: #9ca3af;
+        margin-top: 4px;
+        min-height: 16px;
+      }
+
+      .tiny {
+        font-size: 11px;
+        color: #6b7280;
+        margin-top: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <div class="nav">
+        <div>
+          <div class="logo">Crown Ridge Cellars</div>
+          <div class="tagline">
+            Mock winery · Powered by AI Sommelier (demo)
+          </div>
+        </div>
+        <div class="badge">AI Sommelier Preview</div>
+      </div>
+
+      <div class="layout">
+        <!-- LEFT: wine list -->
+        <div class="wine-list">
+          <div class="section-title">Current releases</div>
+          <div id="wine-cards" class="wine-cards"></div>
+          <div class="tiny">
+            In a real integration, these wines would come directly from the
+            winery’s catalog or spreadsheet.
+          </div>
+        </div>
+
+        <!-- RIGHT: AI widget -->
+        <div class="widget">
+          <div class="widget-header">
+            <div class="section-title">AI Sommelier</div>
+            <div class="widget-wine-title" id="widget-wine-title">
+              Select a wine to begin
+            </div>
+            <div class="widget-wine-sub" id="widget-wine-sub">
+              Choose a bottle on the left and ask anything: pairings, serving
+              tips, taste, or occasion.
+            </div>
+          </div>
+
+          <div class="widget-body">
+            <div id="messages" class="messages"></div>
+
+            <div class="input-row">
+              <textarea
+                id="question"
+                placeholder="Ask about this wine..."
+              ></textarea>
+              <button id="send">Ask</button>
+            </div>
+            <div id="status" class="status"></div>
+            <div class="tiny">
+              This widget calls <code>POST /sommelier</code> with the selected
+              wine ID and your question.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const API_BASE = "";
+      const winesUrl = `${API_BASE}/api/wines`;
+      const sommelierUrl = `${API_BASE}/sommelier`;
+
+      const $wineCards = document.getElementById("wine-cards");
+      const $messages = document.getElementById("messages");
+      const $question = document.getElementById("question");
+      const $send = document.getElementById("send");
+      const $status = document.getElementById("status");
+      const $widgetTitle = document.getElementById("widget-wine-title");
+      const $widgetSub = document.getElementById("widget-wine-sub");
+
+      let wines = [];
+      let selectedWineId = null;
+
+      function addBubble(text, who) {
+        const div = document.createElement("div");
+        div.className = "bubble " + who;
+        div.textContent = text;
+        $messages.appendChild(div);
+        $messages.scrollTop = $messages.scrollHeight;
+      }
+
+      function renderWines() {
+        $wineCards.innerHTML = "";
+        wines.forEach((w) => {
+          const card = document.createElement("div");
+          card.className =
+            "wine-card" + (w.id === selectedWineId ? " active" : "");
+          card.dataset.id = w.id;
+
+          card.innerHTML = `
+            <div class="wine-name-line">
+              <div class="wine-name">${w.name} · ${w.vintage}</div>
+              <div class="wine-price">$${w.price}</div>
+            </div>
+            <div class="wine-meta">
+              ${w.region} · ${w.style} · ${Array.isArray(w.grapes) ? w.grapes.join(
+            ", "
+          ) : w.grapes}
+            </div>
+            <div class="wine-notes">
+              ${w.tasting_notes}
+            </div>
+          `;
+
+          card.addEventListener("click", () => {
+            selectedWineId = w.id;
+            renderWines();
+            $messages.innerHTML = "";
+            addBubble(
+              `You selected ${w.name} ${w.vintage}. Ask me anything about this wine — pairings, taste, serving tips, or ideal occasion.`,
+              "ai"
+            );
+            $widgetTitle.textContent = `${w.name} · ${w.vintage}`;
+            $widgetSub.textContent = `${w.region} · ${w.style} · ${Array.isArray(
+              w.grapes
+            )
+              ? w.grapes.join(", ")
+              : w.grapes}`;
+          });
+
+          $wineCards.appendChild(card);
+        });
+      }
+
+      async function loadWines() {
+        try {
+          const res = await fetch(winesUrl);
+          wines = await res.json();
+          if (wines.length > 0) {
+            selectedWineId = wines[0].id;
+          }
+          renderWines();
+          if (selectedWineId) {
+            const first = wines.find((w) => w.id === selectedWineId);
+            $widgetTitle.textContent = `${first.name} · ${first.vintage}`;
+            $widgetSub.textContent = `${first.region} · ${first.style} · ${
+              Array.isArray(first.grapes)
+                ? first.grapes.join(", ")
+                : first.grapes
+            }`;
+            addBubble(
+              `You’re viewing ${first.name} ${first.vintage}. Ask me anything about this wine — food pairings, flavor, or how best to serve it.`,
+              "ai"
+            );
+          }
+        } catch (err) {
+          console.error("Failed to load wines:", err);
+          $wineCards.innerHTML =
+            '<div class="wine-notes">Failed to load wines from the server.</div>';
+        }
+      }
+
+      async function sendQuestion() {
+        const q = $question.value.trim();
+        if (!q || !selectedWineId) return;
+
+        addBubble(q, "user");
+        $question.value = "";
+        $status.textContent = "Thinking...";
+        $send.disabled = true;
+
+        try {
+          const res = await fetch(sommelierUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              wineId: selectedWineId,
+              userQuestion: q,
+            }),
+          });
+
+          const data = await res.json();
+          if (data.error) {
+            console.error(data.error);
+            addBubble(
+              "Sorry, something went wrong on the server.",
+              "ai"
+            );
+          } else {
+            addBubble(data.answer, "ai");
+          }
+        } catch (err) {
+          console.error(err);
+          addBubble("Sorry, I couldn’t reach the sommelier server.", "ai");
+        } finally {
+          $send.disabled = false;
+          $status.textContent = "";
+        }
+      }
+
+      $send.addEventListener("click", sendQuestion);
+      $question.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendQuestion();
+        }
+      });
+
+      loadWines();
+    </script>
+  </body>
+</html>

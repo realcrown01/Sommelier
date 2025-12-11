@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>AI Sommelier Test</title>
+  </head>
+  <body>
+    <h1>Ask the AI Sommelier</h1>
+    <input id="question" size="50" placeholder="Ask anything about the wine..." />
+    <button id="ask">Ask</button>
+    <pre id="answer"></pre>
+
+    <script>
+      const API_URL = "http://localhost:8000/sommelier";
+      const WINE_ID = 123;
+
+      document.getElementById("ask").onclick = async () => {
+        const q = document.getElementById("question").value.trim();
+        const out = document.getElementById("answer");
+        if (!q) {
+          out.textContent = "Type a question first 🙂";
+          return;
+        }
+        out.textContent = "Thinking...";
+
+        try {
+          const res = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ wineId: WINE_ID, userQuestion: q }),
+          });
+          const data = await res.json();
+          out.textContent = data.answer || JSON.stringify(data, null, 2);
+        } catch (e) {
+          console.error(e);
+          out.textContent = "Error talking to sommelier server.";
+        }
+      };
+    </script>
+  </body>
+</html>
