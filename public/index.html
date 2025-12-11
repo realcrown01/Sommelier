@@ -142,10 +142,12 @@
         color: #e5e7eb;
       }
 
+      /* WIDGET CARD */
       .widget {
         display: flex;
         flex-direction: column;
-        height: 460px;
+        height: 460px;       /* fixed height */
+        overflow: hidden;    /* prevent content from spilling out */
       }
 
       .widget-header {
@@ -190,8 +192,16 @@
         color: white;
       }
 
+      .widget-body {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;       /* allow children (messages) to shrink and scroll */
+      }
+
       .messages {
         flex: 1;
+        min-height: 0;       /* prevents pushing input out of card */
         overflow-y: auto;
         padding-right: 6px;
         margin: 8px 0 10px;
@@ -218,12 +228,6 @@
         border: 1px solid rgba(148, 163, 184, 0.5);
         align-self: flex-start;
         border-bottom-left-radius: 4px;
-      }
-
-      .widget-body {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
       }
 
       .input-row {
@@ -279,6 +283,15 @@
         color: #6b7280;
         margin-top: 6px;
       }
+
+      /* Hidden state for wine list in All wines mode:
+         keep its column (no layout shift), but visually remove it */
+      .wine-list.hidden {
+        visibility: hidden;
+        pointer-events: none;
+        border-color: transparent;
+        background: transparent;
+      }
     </style>
   </head>
   <body>
@@ -295,7 +308,7 @@
 
       <div class="layout">
         <!-- LEFT: wine list -->
-        <div class="wine-list">
+        <div class="wine-list" id="wine-list-panel">
           <div class="section-title">Current releases</div>
           <div id="wine-cards" class="wine-cards"></div>
           <div class="tiny">
@@ -352,10 +365,197 @@
     </div>
 
     <script>
-      const API_BASE = "";
-      const winesUrl = `${API_BASE}/api/wines`;
-      const sommelierUrl = `${API_BASE}/sommelier`;
+      const winesUrl = "/api/wines";
+      const sommelierUrl = "/sommelier";
 
+      const $wineListPanel = document.getElementById("wine-list-panel");
       const $wineCards = document.getElementById("wine-cards");
       const $messages = document.getElementById("messages");
-      const $question = docu
+      const $question = document.getElementById("question");
+      const $send = document.getElementById("send");
+      const $status = document.getElementById("status");
+      const $widgetTitle = document.getElementById("widget-wine-title");
+      const $widgetSub = document.getElementById("widget-wine-sub");
+      const $modeSelected = document.getElementById("mode-selected");
+      const $modeAll = document.getElementById("mode-all");
+
+      let wines = [];
+      let selectedWineId = null;
+      let mode = "selected"; // 'selected' or 'all'
+
+      function addBubble(text, who) {
+        const div = document.createElement("div");
+        div.className = "bubble " + who;
+        div.textContent = text;
+        $messages.appendChild(div);
+        $messages.scrollTop = $messages.scrollHeight;
+      }
+
+      function setMode(newMode) {
+        if (mode === newMode) return;
+        mode = newMode;
+
+        // Update button styles
+        if (mode === "selected") {
+          $modeSelected.classList.add("active");
+          $modeAll.classList.remove("active");
+          $wineListPanel.classList.remove("hidden");
+
+          $widgetSub.textContent =
+            selectedWineId && wines.length
+              ? "Focused on the selected wine. Ask about taste, pairings, serving, or occasion."
+              : "Choose a bottle on the left, then ask about that specific wine.";
+        } else {
+          $modeSelected.classList.remove("active");
+          $modeAll.classList.add("active");
+          $wineListPanel.classList.add("hidden");
+
+          $widgetSub.textContent =
+            "Ask for recommendations across the whole list: food pairings, occasions, style preferences, budget, etc.";
+        }
+
+        addBubble(
+          mode === "selected"
+            ? "You’re now in Selected wine mode: I’ll focus on the highlighted bottle."
+            : "You’re now in All wines mode: I’ll recommend from the entire catalog.",
+          "ai"
+        );
+      }
+
+      function renderWines() {
+        $wineCards.innerHTML = "";
+        wines.forEach((w) => {
+          const card = document.createElement("div");
+          const isActive = w.id === selectedWineId;
+          card.className = "wine-card" + (isActive ? " active" : "");
+          card.dataset.id = String(w.id);
+
+          const grapesText = Array.isArray(w.grapes)
+            ? w.grapes.join(", ")
+            : w.grapes;
+
+          card.innerHTML =
+            '<div class="wine-name-line">' +
+            `<div class="wine-name">${w.name} · ${w.vintage}</div>` +
+            `<div class="wine-price">$${w.price}</div>` +
+            "</div>" +
+            `<div class="wine-meta">${w.region} · ${w.style} · ${grapesText}</div>` +
+            `<div class="wine-notes">${w.tasting_notes}</div>`;
+
+          card.addEventListener("click", () => {
+            selectedWineId = w.id;
+            renderWines();
+            $messages.innerHTML = "";
+            addBubble(
+              `You selected ${w.name} ${w.vintage}. Ask me anything about this wine — pairings, taste, serving tips, or ideal occasion.`,
+              "ai"
+            );
+            $widgetTitle.textContent = `${w.name} · ${w.vintage}`;
+
+            if (mode === "selected") {
+              $widgetSub.textContent = `${w.region} · ${w.style} · ${grapesText}`;
+            }
+          });
+
+          $wineCards.appendChild(card);
+        });
+      }
+
+      async function loadWines() {
+        try {
+          const res = await fetch(winesUrl);
+          const data = await res.json();
+          wines = Array.isArray(data) ? data : [];
+          if (wines.length > 0) {
+            selectedWineId = wines[0].id;
+          }
+          renderWines();
+
+          if (selectedWineId && wines.length) {
+            const first = wines.find((w) => w.id === selectedWineId);
+            const grapesText = Array.isArray(first.grapes)
+              ? first.grapes.join(", ")
+              : first.grapes;
+
+            $widgetTitle.textContent = `${first.name} · ${first.vintage}`;
+            $widgetSub.textContent = `${first.region} · ${first.style} · ${grapesText}`;
+            addBubble(
+              `You’re viewing ${first.name} ${first.vintage}. In Selected wine mode I’ll focus on this bottle; switch to All wines for broader recommendations.`,
+              "ai"
+            );
+          } else {
+            $widgetTitle.textContent = "No wines available";
+            $widgetSub.textContent =
+              "The catalog is empty. Add wines on the backend to see them here.";
+          }
+        } catch (err) {
+          console.error("Failed to load wines:", err);
+          $wineCards.innerHTML =
+            '<div class="wine-notes">Failed to load wines from the server.</div>';
+        }
+      }
+
+      async function sendQuestion() {
+        const q = $question.value.trim();
+        if (!q) return;
+
+        if (mode === "selected" && !selectedWineId) {
+          addBubble(
+            "Please pick a wine on the left first, or switch to All wines mode for general recommendations.",
+            "ai"
+          );
+          return;
+        }
+
+        addBubble(q, "user");
+        $question.value = "";
+        $status.textContent = "Thinking...";
+        $send.disabled = true;
+
+        try {
+          const payload = { userQuestion: q };
+
+          if (mode === "selected" && selectedWineId) {
+            payload.wineId = selectedWineId;
+          }
+
+          const res = await fetch(sommelierUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json();
+          if (data.error) {
+            console.error(data.error);
+            addBubble(
+              "Sorry, something went wrong on the server.",
+              "ai"
+            );
+          } else {
+            addBubble(data.answer, "ai");
+          }
+        } catch (err) {
+          console.error(err);
+          addBubble("Sorry, I couldn’t reach the sommelier server.", "ai");
+        } finally {
+          $send.disabled = false;
+          $status.textContent = "";
+        }
+      }
+
+      $send.addEventListener("click", sendQuestion);
+      $question.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendQuestion();
+        }
+      });
+
+      $modeSelected.addEventListener("click", () => setMode("selected"));
+      $modeAll.addEventListener("click", () => setMode("all"));
+
+      loadWines();
+    </script>
+  </body>
+</html>

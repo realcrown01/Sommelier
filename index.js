@@ -7,16 +7,19 @@ dotenv.config();
 
 const app = express();
 
+// Allow JSON + CORS
 app.use(cors());
 app.use(express.json());
-app.use(express.static("public")); // serves public/index.html etc.
+
+// Serve static files (frontend) from ./public
+app.use(express.static("public"));
 
 // ---- OpenAI client ----
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ---- Mock wine data ----
+// ---- Mock wine catalog ----
 const wines = [
   {
     id: 1,
@@ -83,6 +86,7 @@ app.get("/api/wines", (req, res) => {
   );
 });
 
+// ---- API: single wine (not strictly needed, but handy) ----
 app.get("/api/wines/:id", (req, res) => {
   const wine = getWineById(req.params.id);
   if (!wine) {
@@ -91,38 +95,67 @@ app.get("/api/wines/:id", (req, res) => {
   res.json(wine);
 });
 
-// ---- AI helper: now aware of currentWine + whole catalog ----
+// ---- AI helper: catalog-aware + currentWine-aware ----
 async function callAiSommelier(currentWine, userQuestion, allWines) {
+  // Make a compact catalog so we send fewer tokens each request
+  const compactCatalog = allWines.map((w) => ({
+    id: w.id,
+    name: w.name,
+    vintage: w.vintage,
+    region: w.region,
+    style: w.style,
+    grapes: w.grapes,
+    tasting_notes: w.tasting_notes,
+    price: w.price,
+  }));
+
   const payload = {
-    current_wine: currentWine, // may be null
-    catalog: allWines,
+    current_wine: currentWine
+      ? {
+          id: currentWine.id,
+          name: currentWine.name,
+          vintage: currentWine.vintage,
+          region: currentWine.region,
+          style: currentWine.style,
+          grapes: currentWine.grapes,
+          tasting_notes: currentWine.tasting_notes,
+          price: currentWine.price,
+        }
+      : null,
+    catalog: compactCatalog,
   };
 
   const response = await client.responses.create({
-    model: "gpt-4.1", // or "gpt-4.1-mini" if you want cheaper
+    // FASTER MODEL
+    model: "gpt-4.1-mini",
+
+    // Keep instructions relatively short, but still structured
     instructions: [
       "You are an expert, friendly sommelier working for this winery.",
-      "You are given the full wine catalog and sometimes a 'current_wine' the guest is viewing.",
+      "You get a wine catalog and sometimes a 'current_wine' the guest is viewing.",
       "",
-      "Data you receive (JSON):",
-      "- catalog: array of wines with id, name, vintage, region, grapes, style, tasting_notes, price, story, etc.",
-      "- current_wine: the wine the user has selected, or null if none.",
+      "Data (JSON):",
+      "- catalog: wines with id, name, vintage, region, grapes, style, tasting_notes, price.",
+      "- current_wine: the selected wine, or null.",
       "",
-      "Behavior rules:",
-      "- If the user’s question is clearly about the current wine (e.g., 'how should I serve this?', 'what pairs with this?', 'tell me about this wine'), focus on current_wine.",
-      "- If they ask generally (e.g., 'What should I get for steak?', 'What’s your lightest wine?', 'Recommend something for summer'), consider the entire catalog and recommend 1–3 wines by name.",
-      "- If they mention a specific wine by name, match it against the catalog and talk about that wine.",
-      "- If something is not in the data, say you don't know instead of inventing details.",
-      "- Be concise, warm, and non-snobby; assume the user may be a beginner.",
+      "Behavior:",
+      "- If the question is clearly about the current wine (e.g. 'how should I serve this?', 'what pairs with this?', 'tell me about this wine'), focus on current_wine.",
+      "- If it’s general (e.g. 'What should I get for steak?', 'What’s your lightest wine?', 'Recommend something under $30'), consider the entire catalog and recommend 1–3 wines by name.",
+      "- If they mention a wine by name, match it to the catalog.",
+      "- Never invent details that are not in the data.",
+      "- Be concise, warm, and non-snobby.",
       "",
-      "Response format (always in this structure):",
-      "1. One-sentence summary answering the user directly.",
-      "2. If answering about one wine: short tasting/style profile (2–4 sentences).",
-      "   If recommending multiple wines: briefly describe each recommended wine (1–2 sentences each).",
-      "3. Specific food pairing ideas (3–5 concrete dishes) if relevant.",
-      "4. Serving and occasion tips (temperature, glass, decanting, when to drink it).",
-      "5. Optional: a gentle upsell or suggestion using other wines from the catalog when appropriate."
+      "Response format:",
+      "1. One-sentence direct answer.",
+      "2. If about one wine: 2–3 sentences describing taste/style.",
+      "   If suggesting multiple wines: 1–2 sentences for each wine.",
+      "3. 2–4 specific food pairing ideas (dishes).",
+      "4. Short serving/occasion tips.",
     ].join("\n"),
+
+    // Limit how long it can go on
+    max_output_tokens: 350,
+
     input: [
       "Here is the wine catalog and current wine in JSON:",
       JSON.stringify(payload, null, 2),
@@ -135,7 +168,8 @@ async function callAiSommelier(currentWine, userQuestion, allWines) {
   return response.output_text;
 }
 
-// ---- AI endpoint: wineId is now optional ----
+
+// ---- AI endpoint: wineId is optional (depends on mode) ----
 app.post("/sommelier", async (req, res) => {
   try {
     console.log("Received /sommelier request:", req.body);
@@ -147,7 +181,7 @@ app.post("/sommelier", async (req, res) => {
 
     let currentWine = null;
 
-    // When in "selected wine" mode, frontend sends wineId
+    // In "selected wine" mode, frontend sends wineId
     if (wineId !== undefined && wineId !== null && wineId !== "") {
       currentWine = getWineById(wineId);
       if (!currentWine) {
@@ -165,7 +199,7 @@ app.post("/sommelier", async (req, res) => {
   }
 });
 
-// Simple health check
+// ---- Health check ----
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
