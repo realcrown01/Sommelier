@@ -7,21 +7,16 @@ dotenv.config();
 
 const app = express();
 
-// Allow cross-origin requests (handy for dev / future integration)
 app.use(cors());
-
-// Parse JSON request bodies
 app.use(express.json());
-
-// Serve static files from ./public (for your mock website)
-app.use(express.static("public"));
+app.use(express.static("public")); // serves public/index.html etc.
 
 // ---- OpenAI client ----
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// ---- Mock wine data (this replaces a real DB/API for now) ----
+// ---- Mock wine data ----
 const wines = [
   {
     id: 1,
@@ -67,15 +62,13 @@ const wines = [
   },
 ];
 
-// ---- Helper: look up wine by ID ----
 function getWineById(id) {
   const idNum = Number(id);
   return wines.find((w) => Number(w.id) === idNum) || null;
 }
 
-// ---- API: list wines (for the frontend UI) ----
+// ---- API: list wines for the UI ----
 app.get("/api/wines", (req, res) => {
-  // You can strip some fields if you want this to be lighter
   res.json(
     wines.map((w) => ({
       id: w.id,
@@ -90,7 +83,6 @@ app.get("/api/wines", (req, res) => {
   );
 });
 
-// ---- API: single wine details ----
 app.get("/api/wines/:id", (req, res) => {
   const wine = getWineById(req.params.id);
   if (!wine) {
@@ -99,31 +91,41 @@ app.get("/api/wines/:id", (req, res) => {
   res.json(wine);
 });
 
-// ---- AI helper ----
-async function callAiSommelier(wineData, userQuestion) {
+// ---- AI helper: now aware of currentWine + whole catalog ----
+async function callAiSommelier(currentWine, userQuestion, allWines) {
+  const payload = {
+    current_wine: currentWine, // may be null
+    catalog: allWines,
+  };
+
   const response = await client.responses.create({
     model: "gpt-4.1", // or "gpt-4.1-mini" if you want cheaper
     instructions: [
       "You are an expert, friendly sommelier working for this winery.",
-      "Use the structured wine data provided (name, vintage, region, grapes, style, tasting_notes, story, etc.) to answer.",
+      "You are given the full wine catalog and sometimes a 'current_wine' the guest is viewing.",
       "",
-      "Rules:",
-      "- Base everything on the wine data provided. If something is not in the data, say you don't know.",
-      "- Be concise, warm, and non-snobby.",
-      "- Assume the user might be a beginner; avoid heavy jargon or explain it briefly.",
-      "- If the user asks a general question (not about food pairing), still answer using this wine as context when relevant.",
-      "- Never invent technical details (soil type, barrel regimen, scores) unless they appear in the data.",
+      "Data you receive (JSON):",
+      "- catalog: array of wines with id, name, vintage, region, grapes, style, tasting_notes, price, story, etc.",
+      "- current_wine: the wine the user has selected, or null if none.",
+      "",
+      "Behavior rules:",
+      "- If the user’s question is clearly about the current wine (e.g., 'how should I serve this?', 'what pairs with this?', 'tell me about this wine'), focus on current_wine.",
+      "- If they ask generally (e.g., 'What should I get for steak?', 'What’s your lightest wine?', 'Recommend something for summer'), consider the entire catalog and recommend 1–3 wines by name.",
+      "- If they mention a specific wine by name, match it against the catalog and talk about that wine.",
+      "- If something is not in the data, say you don't know instead of inventing details.",
+      "- Be concise, warm, and non-snobby; assume the user may be a beginner.",
       "",
       "Response format (always in this structure):",
       "1. One-sentence summary answering the user directly.",
-      "2. Short tasting and style profile of the wine (2–4 sentences).",
-      "3. Specific food pairing ideas (3–5 concrete dishes).",
+      "2. If answering about one wine: short tasting/style profile (2–4 sentences).",
+      "   If recommending multiple wines: briefly describe each recommended wine (1–2 sentences each).",
+      "3. Specific food pairing ideas (3–5 concrete dishes) if relevant.",
       "4. Serving and occasion tips (temperature, glass, decanting, when to drink it).",
-      "5. Optional: a gentle upsell or suggestion for when they'd enjoy this wine most."
+      "5. Optional: a gentle upsell or suggestion using other wines from the catalog when appropriate."
     ].join("\n"),
     input: [
-      "Here is the wine data in JSON:",
-      JSON.stringify(wineData, null, 2),
+      "Here is the wine catalog and current wine in JSON:",
+      JSON.stringify(payload, null, 2),
       "",
       "Customer question:",
       userQuestion,
@@ -133,25 +135,29 @@ async function callAiSommelier(wineData, userQuestion) {
   return response.output_text;
 }
 
-// ---- Main AI endpoint ----
+// ---- AI endpoint: wineId is now optional ----
 app.post("/sommelier", async (req, res) => {
   try {
     console.log("Received /sommelier request:", req.body);
-
     const { wineId, userQuestion } = req.body;
 
-    if (!wineId || !userQuestion) {
-      return res
-        .status(400)
-        .json({ error: "wineId and userQuestion are required" });
+    if (!userQuestion) {
+      return res.status(400).json({ error: "userQuestion is required" });
     }
 
-    const wine = getWineById(wineId);
-    if (!wine) {
-      return res.status(404).json({ error: "Wine not found" });
+    let currentWine = null;
+
+    // When in "selected wine" mode, frontend sends wineId
+    if (wineId !== undefined && wineId !== null && wineId !== "") {
+      currentWine = getWineById(wineId);
+      if (!currentWine) {
+        console.warn(
+          `Wine with id ${wineId} not found; continuing without currentWine.`
+        );
+      }
     }
 
-    const answer = await callAiSommelier(wine, userQuestion);
+    const answer = await callAiSommelier(currentWine, userQuestion, wines);
     res.json({ answer });
   } catch (err) {
     console.error("Error in /sommelier:", err);
@@ -159,7 +165,7 @@ app.post("/sommelier", async (req, res) => {
   }
 });
 
-// ---- Health / root ----
+// Simple health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
