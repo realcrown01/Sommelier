@@ -95,8 +95,7 @@
         background: rgba(15, 23, 42, 0.9);
         border: 1px solid transparent;
         cursor: pointer;
-        transition: border-color 0.15s ease, background 0.15s ease,
-          transform 0.08s ease;
+        transition: border-color 0.15s ease, transform 0.08s ease;
       }
 
       .wine-card:hover {
@@ -142,12 +141,20 @@
         color: #e5e7eb;
       }
 
+      /* Keep layout stable in All wines mode (no shift) */
+      .wine-list.hidden {
+        visibility: hidden;
+        pointer-events: none;
+        border-color: transparent;
+        background: transparent;
+      }
+
       /* WIDGET CARD */
       .widget {
         display: flex;
         flex-direction: column;
-        height: 460px;       /* fixed height */
-        overflow: hidden;    /* prevent content from spilling out */
+        height: 520px;
+        overflow: hidden;
       }
 
       .widget-header {
@@ -196,15 +203,37 @@
         display: flex;
         flex-direction: column;
         flex: 1;
-        min-height: 0;       /* allow children (messages) to shrink and scroll */
+        min-height: 0;
+      }
+
+      .smart-prompts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 8px 0 10px;
+      }
+
+      .chip {
+        border: 1px solid rgba(148, 163, 184, 0.6);
+        background: rgba(15, 23, 42, 0.9);
+        color: #e5e7eb;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .chip:hover {
+        border-color: rgba(96, 165, 250, 0.9);
       }
 
       .messages {
         flex: 1;
-        min-height: 0;       /* prevents pushing input out of card */
+        min-height: 0;
         overflow-y: auto;
         padding-right: 6px;
-        margin: 8px 0 10px;
+        margin: 0 0 10px;
       }
 
       .bubble {
@@ -283,23 +312,14 @@
         color: #6b7280;
         margin-top: 6px;
       }
-
-      /* Hidden state for wine list in All wines mode:
-         keep its column (no layout shift), but visually remove it */
-      .wine-list.hidden {
-        visibility: hidden;
-        pointer-events: none;
-        border-color: transparent;
-        background: transparent;
-      }
     </style>
   </head>
   <body>
     <div class="page">
       <div class="nav">
         <div>
-          <div class="logo">Crown Ridge Cellars</div>
-          <div class="tagline">
+          <div class="logo" id="brand-name">Mock Winery</div>
+          <div class="tagline" id="brand-tagline">
             Mock winery · Powered by AI Sommelier (demo)
           </div>
         </div>
@@ -312,8 +332,7 @@
           <div class="section-title">Current releases</div>
           <div id="wine-cards" class="wine-cards"></div>
           <div class="tiny">
-            In a real integration, these wines would come directly from the
-            winery’s catalog or spreadsheet.
+            Click a wine to enter “Selected wine” mode.
           </div>
         </div>
 
@@ -323,16 +342,8 @@
             <div class="section-title">AI Sommelier</div>
 
             <div class="mode-toggle">
-              <button
-                class="mode-btn active"
-                id="mode-selected"
-                data-mode="selected"
-              >
-                Selected wine
-              </button>
-              <button class="mode-btn" id="mode-all" data-mode="all">
-                All wines
-              </button>
+              <button class="mode-btn active" id="mode-selected">Selected wine</button>
+              <button class="mode-btn" id="mode-all">All wines</button>
             </div>
 
             <div class="widget-wine-title" id="widget-wine-title">
@@ -345,8 +356,13 @@
           </div>
 
           <div class="widget-body">
+            <!-- Smart prompts -->
+            <div class="smart-prompts" id="smart-prompts"></div>
+
+            <!-- Messages -->
             <div id="messages" class="messages"></div>
 
+            <!-- Input -->
             <div class="input-row">
               <textarea
                 id="question"
@@ -356,8 +372,7 @@
             </div>
             <div id="status" class="status"></div>
             <div class="tiny">
-              In “Selected wine” mode, the assistant focuses on the highlighted
-              bottle. In “All wines” mode, it recommends from the entire list.
+              Tip: Click a suggested prompt to send it instantly.
             </div>
           </div>
         </div>
@@ -366,16 +381,24 @@
 
     <script>
       const winesUrl = "/api/wines";
+      const promptsUrl = (mode) => `/api/prompts?mode=${encodeURIComponent(mode)}`;
       const sommelierUrl = "/sommelier";
+
+      const $brandName = document.getElementById("brand-name");
+      const $brandTagline = document.getElementById("brand-tagline");
 
       const $wineListPanel = document.getElementById("wine-list-panel");
       const $wineCards = document.getElementById("wine-cards");
+
+      const $smartPrompts = document.getElementById("smart-prompts");
       const $messages = document.getElementById("messages");
       const $question = document.getElementById("question");
       const $send = document.getElementById("send");
       const $status = document.getElementById("status");
+
       const $widgetTitle = document.getElementById("widget-wine-title");
       const $widgetSub = document.getElementById("widget-wine-sub");
+
       const $modeSelected = document.getElementById("mode-selected");
       const $modeAll = document.getElementById("mode-all");
 
@@ -395,7 +418,6 @@
         if (mode === newMode) return;
         mode = newMode;
 
-        // Update button styles
         if (mode === "selected") {
           $modeSelected.classList.add("active");
           $modeAll.classList.remove("active");
@@ -409,17 +431,42 @@
           $modeSelected.classList.remove("active");
           $modeAll.classList.add("active");
           $wineListPanel.classList.add("hidden");
-
+          $widgetTitle.textContent = "All wines";
           $widgetSub.textContent =
-            "Ask for recommendations across the whole list: food pairings, occasions, style preferences, budget, etc.";
+            "Ask for recommendations across the whole list: food, budget, occasions, and style preferences.";
         }
 
+        loadSmartPrompts();
         addBubble(
           mode === "selected"
-            ? "You’re now in Selected wine mode: I’ll focus on the highlighted bottle."
-            : "You’re now in All wines mode: I’ll recommend from the entire catalog.",
+            ? "Selected wine mode: I’ll focus on the highlighted bottle."
+            : "All wines mode: I’ll recommend from the entire catalog.",
           "ai"
         );
+      }
+
+      async function loadSmartPrompts() {
+        try {
+          const res = await fetch(promptsUrl(mode));
+          const data = await res.json();
+          const prompts = Array.isArray(data.prompts) ? data.prompts : [];
+
+          $smartPrompts.innerHTML = "";
+          prompts.forEach((p) => {
+            const chip = document.createElement("div");
+            chip.className = "chip";
+            chip.textContent = p;
+            chip.addEventListener("click", async () => {
+              // Send instantly
+              $question.value = p;
+              await sendQuestion();
+            });
+            $smartPrompts.appendChild(chip);
+          });
+        } catch (err) {
+          console.error("Failed to load prompts:", err);
+          $smartPrompts.innerHTML = "";
+        }
       }
 
       function renderWines() {
@@ -428,7 +475,6 @@
           const card = document.createElement("div");
           const isActive = w.id === selectedWineId;
           card.className = "wine-card" + (isActive ? " active" : "");
-          card.dataset.id = String(w.id);
 
           const grapesText = Array.isArray(w.grapes)
             ? w.grapes.join(", ")
@@ -445,16 +491,19 @@
           card.addEventListener("click", () => {
             selectedWineId = w.id;
             renderWines();
+
+            if (mode !== "selected") {
+              setMode("selected");
+            }
+
             $messages.innerHTML = "";
             addBubble(
               `You selected ${w.name} ${w.vintage}. Ask me anything about this wine — pairings, taste, serving tips, or ideal occasion.`,
               "ai"
             );
-            $widgetTitle.textContent = `${w.name} · ${w.vintage}`;
 
-            if (mode === "selected") {
-              $widgetSub.textContent = `${w.region} · ${w.style} · ${grapesText}`;
-            }
+            $widgetTitle.textContent = `${w.name} · ${w.vintage}`;
+            $widgetSub.textContent = `${w.region} · ${w.style} · ${grapesText}`;
           });
 
           $wineCards.appendChild(card);
@@ -466,9 +515,11 @@
           const res = await fetch(winesUrl);
           const data = await res.json();
           wines = Array.isArray(data) ? data : [];
+
           if (wines.length > 0) {
             selectedWineId = wines[0].id;
           }
+
           renderWines();
 
           if (selectedWineId && wines.length) {
@@ -480,7 +531,7 @@
             $widgetTitle.textContent = `${first.name} · ${first.vintage}`;
             $widgetSub.textContent = `${first.region} · ${first.style} · ${grapesText}`;
             addBubble(
-              `You’re viewing ${first.name} ${first.vintage}. In Selected wine mode I’ll focus on this bottle; switch to All wines for broader recommendations.`,
+              `Welcome! I’m the AI Sommelier. Ask about this wine, or switch to “All wines” for recommendations.`,
               "ai"
             );
           } else {
@@ -501,7 +552,7 @@
 
         if (mode === "selected" && !selectedWineId) {
           addBubble(
-            "Please pick a wine on the left first, or switch to All wines mode for general recommendations.",
+            "Please pick a wine on the left first, or switch to All wines mode.",
             "ai"
           );
           return;
@@ -514,7 +565,6 @@
 
         try {
           const payload = { userQuestion: q };
-
           if (mode === "selected" && selectedWineId) {
             payload.wineId = selectedWineId;
           }
@@ -528,10 +578,7 @@
           const data = await res.json();
           if (data.error) {
             console.error(data.error);
-            addBubble(
-              "Sorry, something went wrong on the server.",
-              "ai"
-            );
+            addBubble("Sorry, something went wrong on the server.", "ai");
           } else {
             addBubble(data.answer, "ai");
           }
@@ -544,6 +591,7 @@
         }
       }
 
+      // Events
       $send.addEventListener("click", sendQuestion);
       $question.addEventListener("keydown", (e) => {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -555,7 +603,16 @@
       $modeSelected.addEventListener("click", () => setMode("selected"));
       $modeAll.addEventListener("click", () => setMode("all"));
 
-      loadWines();
+      // Boot
+      (async function init() {
+        // These are just UI labels; brand lives in backend prompt.
+        // If you want, we can add /api/brand to fetch live brand values.
+        $brandName.textContent = "Crown Ridge Cellars";
+        $brandTagline.textContent = "Mock winery · Powered by AI Sommelier (demo)";
+
+        await loadWines();
+        await loadSmartPrompts();
+      })();
     </script>
   </body>
 </html>
